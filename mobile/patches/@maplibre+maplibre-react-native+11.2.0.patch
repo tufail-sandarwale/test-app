@@ -1,0 +1,13 @@
+diff --git a/node_modules/@maplibre/maplibre-react-native/android/src/main/java/org/maplibre/reactnative/components/mapview/MLRNMapViewManager.kt b/node_modules/@maplibre/maplibre-react-native/android/src/main/java/org/maplibre/reactnative/components/mapview/MLRNMapViewManager.kt
+index 93a49d5..a8ecd0c 100644
+--- a/node_modules/@maplibre/maplibre-react-native/android/src/main/java/org/maplibre/reactnative/components/mapview/MLRNMapViewManager.kt
++++ b/node_modules/@maplibre/maplibre-react-native/android/src/main/java/org/maplibre/reactnative/components/mapview/MLRNMapViewManager.kt
+@@ -262,7 +262,7 @@ open class MLRNMapViewManager(
+          * tearing down the views in onDropViewInstance.
+          */
+         fun disposeNativeMapView() {
+-            val mapView = mViewManager.getByReactTag(reactTag)
++            val mapView = mViewManager.getByReactTag(getReactTag())
+ 
+             if (mapView != null) {
+                 UiThreadUtil.runOnUiThread {

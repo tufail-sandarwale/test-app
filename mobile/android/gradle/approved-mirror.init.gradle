@@ -1,0 +1,34 @@
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+
+def mirrorAddress = System.getProperty('mockgpstester.mavenMirror')
+if (!mirrorAddress) {
+    throw new GradleException('Set -Dmockgpstester.mavenMirror to your approved HTTPS Maven mirror URL.')
+}
+
+def mirrorUri = new URI(mirrorAddress)
+if (mirrorUri.scheme != 'https' || !mirrorUri.host || mirrorUri.userInfo || mirrorUri.query || mirrorUri.fragment) {
+    throw new GradleException('The approved Maven mirror must be an HTTPS URL without credentials, query parameters, or fragments.')
+}
+
+def redirectRepositories = { repositories ->
+    repositories.withType(MavenArtifactRepository).configureEach { repository ->
+        if (repository.url.host in ['repo.maven.apache.org', 'repo1.maven.org']) {
+            repository.setUrl(mirrorUri)
+        }
+    }
+}
+
+gradle.beforeSettings { settings ->
+    settings.pluginManagement.repositories.maven {
+        name = 'ApprovedMavenMirror'
+        url = mirrorUri
+    }
+    settings.pluginManagement.repositories.gradlePluginPortal()
+    redirectRepositories(settings.pluginManagement.repositories)
+    redirectRepositories(settings.dependencyResolutionManagement.repositories)
+}
+
+gradle.beforeProject { project ->
+    redirectRepositories(project.buildscript.repositories)
+    redirectRepositories(project.repositories)
+}
