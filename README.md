@@ -48,23 +48,76 @@ The native implementation reports missing configuration with:
 
 No Developer Options, root, Play Integrity, mock-location detection, anti-cheat, or third-party security bypasses are permitted. No hidden injection or modification of other apps. Test only devices and applications you are authorized to test.
 
-## Prerequisites
+## Prerequisites and dependencies
 
-Install Android Studio, Android SDK Manager, and an emulator or connect an authorized Android test device with USB debugging. Follow the [React Native environment setup](https://reactnative.dev/docs/set-up-your-environment).
+Only the tools in the first table must be installed manually. npm, Gradle and pip download the libraries listed below from the project's lock/build/requirements files. Expo and Expo Go are **not** used and cannot run this app because it contains custom native Kotlin code.
 
-| Component | Selected version |
+### Tools to install
+
+| Tool | Version | Needed for |
+| --- | --- | --- |
+| Git | Any current version | Cloning the repository |
+| Node.js (includes npm) | `^22.13.0`, `^24.3.0` or `>=26.0.0`; tested with 24.20.0 | Mobile dependencies, Metro, tests, JavaScript bundle |
+| JDK | 17 recommended by React Native; this project was also built with Java 26 | Gradle, Kotlin and Android builds |
+| Android Studio or Android command-line tools | Current version | Android SDK Manager, optional emulator |
+| Android SDK Platform | `platforms;android-37.0` (compile SDK 37) | Android build |
+| Android SDK Build-Tools | `build-tools;37.0.0` | Android build and `apksigner` |
+| Android SDK Platform-Tools | Current version; tested with 37.0.1 | `adb` install/debug |
+| Android NDK | `ndk;27.1.12297006` | React Native native libraries |
+| CMake | `cmake;3.22.1` | React Native native libraries |
+| Android phone or emulator | Android 7.0+ (API 24); app targets API 36 | Running the app |
+| Python | 3.13 (tested) | Optional backend only |
+| PostgreSQL | Current supported version (live run not yet verified) | Optional production backend only; SQLite works for local development |
+
+Gradle 9.4.1 does not need a separate install: the committed `gradlew` wrapper downloads it. Kotlin 2.2.0, the Android Gradle plugin and the React Native Gradle plugin are also downloaded by Gradle. Follow the [React Native environment setup](https://reactnative.dev/docs/set-up-your-environment) for platform-specific installation.
+
+Set `JAVA_HOME` to the JDK and select the same JDK as the Gradle JDK in Android Studio. Set `ANDROID_HOME` to the SDK location, usually `%LOCALAPPDATA%\Android\Sdk` on Windows, and add `%ANDROID_HOME%\platform-tools` to `PATH` (also `%ANDROID_HOME%\emulator` if you use an emulator). Android Studio can alternatively create `mobile/android/local.properties` with the SDK path; do not commit that machine-specific file. Accept SDK licenses yourself.
+
+Install all required SDK packages with the SDK Manager command shown in [User-local SDK configuration](#user-local-sdk-configuration).
+
+### Mobile libraries (installed by `npm ci`)
+
+| Package | Version |
 | --- | --- |
-| React Native / React | 0.87.1 / 19.2.3 |
-| Node | ^22.13.0, ^24.3.0, or >=26.0.0; tested with 24.20.0 |
-| React Navigation native / native-stack | 7.3.18 / 7.18.10, stable rather than 8.x alpha |
-| react-native-screens | 4.27.0 |
-| Kotlin / Gradle wrapper | 2.2.0 / 9.4.1 |
-| Android compile / target / minimum SDK | 37 / 36 / 24 |
-| Build Tools / NDK | 37.0.0 / 27.1.12297006 |
+| `react-native` / `react` | 0.87.1 / 19.2.3 |
+| `@react-navigation/native` / `@react-navigation/native-stack` | 7.3.18 / 7.18.10 |
+| `react-native-screens` / `react-native-safe-area-context` | 4.27.0 / ^5.5.2 |
+| `@maplibre/maplibre-react-native` | 11.2.0, with the committed patch in `mobile/patches` |
+| `@react-native-async-storage/async-storage` | 2.2.0 |
+| `zustand` | 5.0.15 |
+| `@turf/along`, `@turf/circle`, `@turf/distance`, `@turf/helpers`, `@turf/length` | 7.3.5 |
+| `axios` | ^1.20.0 |
 
-Use JDK 17 as recommended by React Native, set `JAVA_HOME`, and select the same Gradle JDK in Android Studio. On the observed Java 26 installation, Gradle 9.4.1 successfully completed the debug APK build, including Kotlin and C++ compilation. `JAVA_HOME` was not changed; the verified build used Java from PATH.
+Development tools installed by `npm ci`: TypeScript ^6.0.3, Jest ^29.6.3, ESLint ^8.19.0, Prettier 2.8.8, React Native CLI 20.2.0, React Native Babel/Metro/Jest presets 0.87.1, React Test Renderer 19.2.3 and `patch-package` 8.0.1. `patch-package` runs automatically after `npm ci` and applies the MapLibre compatibility fix; do not install with `--ignore-scripts`.
 
-Install the SDK platform, Build Tools, and NDK versions above, plus Platform-Tools, Command-line Tools, Android Emulator, and a system image. Accept SDK licenses yourself. Set `ANDROID_HOME` to the actual SDK location, usually `%LOCALAPPDATA%\Android\Sdk`, and add `%ANDROID_HOME%\platform-tools` and `%ANDROID_HOME%\emulator` to `PATH`. Android Studio can alternatively generate `mobile/android/local.properties` with the actual SDK path; do not commit machine-specific paths.
+### Android native libraries (downloaded by Gradle)
+
+| Library | Version | Purpose |
+| --- | --- | --- |
+| `net.sf.geographiclib:GeographicLib-Java` | 2.1 | WGS84 route interpolation |
+| `com.facebook.react:react-android` / Hermes | Matched to React Native 0.87.1 | React Native runtime |
+| `junit:junit` | 4.13.2 | Kotlin unit tests |
+| `androidx.test:runner` / `androidx.test:core` / `androidx.test.ext:junit` | 1.6.2 / 1.6.1 / 1.2.1 | Device instrumentation test |
+
+Gradle needs access to Google Maven, Maven Central and the Gradle Plugin Portal. On networks that block Maven Central, use an approved mirror as described in [Windows certificate trust and approved Maven mirror](#windows-certificate-trust-and-approved-maven-mirror).
+
+### Optional backend libraries (`backend/requirements.txt`)
+
+FastAPI 0.141.1, Uvicorn 0.53.0, SQLAlchemy 2.0.54, psycopg[binary] 3.3.5, Alembic 1.20.0, PyJWT 2.14.0, pwdlib[argon2] 0.3.1, Pydantic 2.13.5, pydantic-settings 2.15.0, email-validator 2.3.0, SlowAPI 0.1.10, HTTPX 0.28.1 and pytest 9.1.1.
+
+### Set up a fresh clone
+
+```powershell
+git clone https://github.com/tufail-sandarwale/test-app.git
+cd test-app
+npm --prefix mobile ci
+
+# Optional backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+```
+
+If your pip is configured for user-wide installs, add `--no-user` to the pip install command inside the virtual environment. Then continue with [Installation and running](#installation-and-running) for the mobile app or [Optional backend](#optional-backend) for the API. The map needs internet access to load tiles; GPS simulation, saved locations and routes work offline.
 
 ### User-local SDK configuration
 
