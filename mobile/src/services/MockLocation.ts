@@ -10,7 +10,11 @@ export interface Prerequisites {
   permissionGranted: boolean;
   locationEnabled: boolean;
   mockAppSelected: boolean;
+  developerOptionsEnabled: boolean;
+  notificationsEnabled: boolean;
 }
+
+export type SystemSettingsScreen = 'about' | 'developer' | 'location' | 'app';
 
 export interface LocationReading extends LocationConfig {
   timestamp: number;
@@ -48,7 +52,8 @@ export interface RouteOptions {
 interface NativeLocation {
   getPrerequisites(): Promise<Prerequisites>;
   captureRealLocation(): Promise<LocationReading>;
-  openDeveloperSettings(): Promise<void>;
+  /** Resolves false when Android opened general Settings as a fallback. */
+  openSystemSettings(screen: SystemSettingsScreen): Promise<boolean>;
   getStatus(): Promise<SimulationStatus>;
   start(options: StartOptions): Promise<SimulationStatus>;
   startRoute(options: RouteOptions): Promise<SimulationStatus>;

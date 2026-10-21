@@ -8,6 +8,7 @@ import {
 } from '../screens/PhaseOneScreens';
 import { RoutesScreen } from '../screens/RoutesScreen';
 import { CloudScreen } from '../screens/CloudScreen';
+import { DeveloperSetupScreen } from '../screens/DeveloperSetupScreen';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -17,6 +18,7 @@ export type RootStackParamList = {
   Settings: undefined;
   Routes: undefined;
   Cloud: undefined;
+  DeveloperSetup: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -60,6 +62,11 @@ export function RootNavigator() {
         name="Cloud"
         component={CloudScreen}
         options={{ title: 'Cloud Presets' }}
+      />
+      <Stack.Screen
+        name="DeveloperSetup"
+        component={DeveloperSetupScreen}
+        options={{ title: 'Device Setup' }}
       />
     </Stack.Navigator>
   );

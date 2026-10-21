@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, Switch, Text, View } from 'react-native';
-import { useTheme } from '@react-navigation/native';
+import { useFocusEffect, useTheme } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ActionButton } from '../components/ActionButton';
 import { Field, ErrorMessage } from '../components/Field';
@@ -11,7 +11,8 @@ import {
   useSimulationStore,
   simulationActions,
 } from '../store/useSimulationStore';
-import { nativeLocation, requireNative } from '../services/MockLocation';
+import { nativeLocation } from '../services/MockLocation';
+import { isReady, setupActions, useSetupStore } from '../store/useSetupStore';
 import { distanceMeters, insideRadius } from '../utils/geo';
 import { usePersistenceStatus } from '../services/localStorage';
 import { applyLocationDraft, locationDraft } from '../services/locationEditor';
@@ -23,18 +24,36 @@ type HomeProps = NativeStackScreenProps<RootStackParamList, 'Home'>;
 export { MapScreen } from './MapScreen';
 
 export function HomeScreen({ navigation }: HomeProps) {
-  const { status, realLocation, error, busy, run } = useSimulationStore();
+  const { status, realLocation, error, busy } = useSimulationStore();
   const { selected, target, settings } = useLocationStore();
+  const setup = useSetupStore(state => state.prerequisites);
   const storageError = usePersistenceStatus(state => state.error);
   const active = ['starting', 'running', 'paused'].includes(status.state);
   const location = status.location;
   const distance = target && location ? distanceMeters(target, location) : null;
   const disabled = !nativeLocation || busy;
+  useFocusEffect(
+    useCallback(() => {
+      if (nativeLocation) {
+        setupActions.refresh();
+      }
+    }, []),
+  );
   return (
     <Screen>
       <SectionTitle>Simulation</SectionTitle>
       <ErrorMessage message={error} />
       <ErrorMessage message={storageError} />
+      <Reading
+        label="Device setup"
+        value={
+          setup ? (isReady(setup) ? 'Ready' : 'Action needed') : 'Not checked'
+        }
+      />
+      <ActionButton
+        label="Device Setup"
+        onPress={() => navigation.navigate('DeveloperSetup')}
+      />
       <Reading
         label="Status"
         value={
@@ -152,10 +171,6 @@ export function HomeScreen({ navigation }: HomeProps) {
             },
           ])
         }
-      />
-      <ActionButton
-        label="Developer Options"
-        onPress={() => run(() => requireNative().openDeveloperSettings())}
       />
       <ActionButton
         label="Routes"

@@ -10,6 +10,7 @@ import {
 } from '../src/screens/PhaseOneScreens';
 import { RoutesScreen } from '../src/screens/RoutesScreen';
 import { CloudScreen } from '../src/screens/CloudScreen';
+import { DeveloperSetupScreen } from '../src/screens/DeveloperSetupScreen';
 import { useLocationStore } from '../src/store/useLocationStore';
 import { useSimulationStore } from '../src/store/useSimulationStore';
 import { usePersistenceStatus } from '../src/services/localStorage';
@@ -81,6 +82,7 @@ test.each([
   ['Open Settings', SettingsScreen],
   ['Routes', RoutesScreen],
   ['Cloud Presets', CloudScreen],
+  ['Device Setup', DeveloperSetupScreen],
 ] as const)('%s opens its destination', async (label, component) => {
   await press(label);
   expect(app.root.findAllByType(component)).toHaveLength(1);

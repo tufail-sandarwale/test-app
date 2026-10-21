@@ -42,6 +42,8 @@ Android GPS testing application using React Native, TypeScript, native Kotlin, a
 
 Android's supported mock-location configuration is required. Enable Developer Options and select **Mock GPS Tester** under **Select mock location app**. Enable device Location and grant precise location permission. Allow notifications so foreground controls are visible.
 
+Open **Device Setup** from the Home screen for a live checklist of Developer Options, mock location app, precise location, Location services, and notifications. Each item shows its status and a button that opens the matching Android Settings screen; the status refreshes when you return to the app. Android does not allow apps to turn Developer Options on or off, so the user always flips the switch: to enable, tap **Build number** 7 times in About phone; to disable, turn off the switch at the top of Developer Options (blocked in-app while a simulation is active). Some manufacturers' Settings screens differ; if a screen is unavailable, general Settings opens instead.
+
 The native implementation reports missing configuration with:
 
 > Mock location is not enabled for this application. Select this application as the mock location app in Android Developer Options.

@@ -2,12 +2,14 @@ package com.mockgpstester.mocklocation
 
 import android.Manifest
 import android.app.AppOpsManager
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -105,16 +107,30 @@ class MockLocationModule(private val context: ReactApplicationContext) : ReactCo
             result.putBoolean("permissionGranted", context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
             result.putBoolean("locationEnabled", if (Build.VERSION.SDK_INT >= 28) manager.isLocationEnabled else manager.isProviderEnabled(LocationManager.GPS_PROVIDER))
             result.putBoolean("mockAppSelected", appOps.checkOpNoThrow(AppOpsManager.OPSTR_MOCK_LOCATION, Process.myUid(), context.packageName) == AppOpsManager.MODE_ALLOWED)
+            result.putBoolean("developerOptionsEnabled", Settings.Global.getInt(context.contentResolver, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) == 1)
+            result.putBoolean("notificationsEnabled", (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).areNotificationsEnabled())
             promise.resolve(result)
         } catch (error: Exception) { promise.reject("PREREQUISITES", error.message, error) }
     }
 
+    // Apps cannot toggle Developer Options; only open the screen where the user can.
     @ReactMethod
-    fun openDeveloperSettings(promise: Promise) {
+    fun openSystemSettings(screen: String, promise: Promise) {
+        val intent = when (screen) {
+            "about" -> Intent(Settings.ACTION_DEVICE_INFO_SETTINGS)
+            "developer" -> Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+            "location" -> Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+            "app" -> Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+            else -> {
+                promise.reject("SETTINGS", "Unsupported settings screen.")
+                return
+            }
+        }
         try {
-            context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            promise.resolve(null)
-        } catch (error: Exception) { promise.reject("SETTINGS", "Open Android Developer Options manually.", error) }
+            val target = if (intent.resolveActivity(context.packageManager) != null) intent else Intent(Settings.ACTION_SETTINGS)
+            context.startActivity(target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            promise.resolve(target === intent)
+        } catch (error: Exception) { promise.reject("SETTINGS", "Open Android Settings manually.", error) }
     }
 
     @ReactMethod
