@@ -2,6 +2,7 @@ import React from 'react';
 import { NativeModules, PermissionsAndroid } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { NavigationContainer } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
@@ -103,6 +104,7 @@ function setStatus(status: object) {
 beforeEach(async () => {
   jest.clearAllMocks();
   resetSearchThrottle();
+  await AsyncStorage.clear();
   native.start.mockResolvedValue({ state: 'starting', timestamp: 0 });
   native.startRoute.mockResolvedValue({ state: 'starting', timestamp: 0 });
   native.stop.mockResolvedValue(stopped);
@@ -407,4 +409,58 @@ test('superseded or cleared searches never leave a spinner or stale results', as
   });
   expect(control('Go to Paris')).toBeUndefined();
   expect(control('Search').props.accessibilityState.busy).toBe(false);
+});
+
+async function renderApp() {
+  await act(async () => {
+    app = ReactTestRenderer.create(
+      <NavigationContainer>
+        <RootNavigator />
+      </NavigationContainer>,
+    );
+  });
+}
+
+test('a map that never reported back starts paused and loads on demand', async () => {
+  await act(async () => app.unmount());
+  await AsyncStorage.setItem('mock-gps-map-guard-v1', 'starting');
+  await renderApp();
+  expect(map()).toBeUndefined();
+  expect(control('Load map')).toBeDefined();
+  await tap('Start mocking');
+  expect(native.start).toHaveBeenCalledWith(
+    expect.objectContaining({ latitude: 19, longitude: 72 }),
+  );
+  await tap('Load map');
+  expect(map()).toBeDefined();
+  expect(map().props.androidView).toBe('texture');
+});
+
+test('the map startup guard clears once the map reports back', async () => {
+  expect(await AsyncStorage.getItem('mock-gps-map-guard-v1')).toBe('starting');
+  await act(async () => map().props.onDidFinishLoadingMap());
+  expect(await AsyncStorage.getItem('mock-gps-map-guard-v1')).toBeNull();
+  await act(async () => app.unmount());
+  await renderApp();
+  expect(map()).toBeDefined();
+});
+
+test('malformed map events are ignored instead of crashing', async () => {
+  await act(async () => {
+    map().props.onRegionDidChange({ nativeEvent: {} });
+    map().props.onRegionDidChange({ nativeEvent: { center: [NaN, 1] } });
+    map().props.onPress({ nativeEvent: {} });
+    map().props.onLongPress({});
+    map().props.onRegionWillChange({});
+  });
+  expect(
+    control('Pin at 19.000000, 72.000000. Share coordinates'),
+  ).toBeDefined();
+  expect(byLabel('Set as radius target')).toBeUndefined();
+});
+
+test('ornament positions are whole numbers for the native Int32 props', async () => {
+  const props = map().props;
+  expect(Number.isInteger(props.attributionPosition.bottom)).toBe(true);
+  expect(Number.isInteger(props.compassPosition.top)).toBe(true);
 });

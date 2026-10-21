@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import App from '../App';
 import { ActionButton } from '../src/components/ActionButton';
 import {
@@ -39,6 +40,7 @@ jest.mock(
 let app: ReactTestRenderer.ReactTestRenderer;
 
 beforeEach(async () => {
+  await AsyncStorage.clear();
   usePersistenceStatus.setState({ ready: true });
   useLocationStore.setState({
     selected: null,
@@ -145,6 +147,7 @@ test('a stalled map offers retry without blocking manual coordinates', async () 
   jest.useFakeTimers();
   try {
     await ReactTestRenderer.act(async () => app.unmount());
+    await AsyncStorage.clear();
     await ReactTestRenderer.act(async () => {
       app = ReactTestRenderer.create(<App />);
     });

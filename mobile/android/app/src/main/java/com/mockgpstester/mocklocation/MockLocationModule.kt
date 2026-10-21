@@ -26,6 +26,7 @@ import com.facebook.react.bridge.WritableMap
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.common.LifecycleState
+import com.mockgpstester.CrashRecorder
 import org.json.JSONObject
 
 class MockLocationModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
@@ -111,6 +112,16 @@ class MockLocationModule(private val context: ReactApplicationContext) : ReactCo
     private fun requireSingleLocation() {
         check(SimulationState.state in listOf("running", "paused")) { "Start a location simulation first." }
         check(SimulationState.config?.points?.size == 1) { "Joystick and move are only available for single-location simulations, not routes." }
+    }
+
+    @ReactMethod fun getLastCrashReport(promise: Promise) {
+        try { promise.resolve(CrashRecorder.read(context)) }
+        catch (error: Exception) { promise.reject("CRASH_REPORT", error.message, error) }
+    }
+
+    @ReactMethod fun clearLastCrashReport(promise: Promise) {
+        try { CrashRecorder.clear(context); promise.resolve(null) }
+        catch (error: Exception) { promise.reject("CRASH_REPORT", error.message, error) }
     }
 
     private fun command(action: String, allowed: List<String>, promise: Promise) {

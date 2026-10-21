@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -63,6 +63,12 @@ import {
   useAccent,
 } from '../components/MapControls';
 import { BottomSheet, NamePrompt, SideDrawer } from '../components/Overlays';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import {
+  mapFailedLastTime,
+  markMapHealthy,
+  markMapStarting,
+} from '../services/mapGuard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -92,6 +98,62 @@ function formatDuration(seconds: number) {
 
 const message = (problem: unknown) =>
   problem instanceof Error ? problem.message : String(problem);
+
+const finiteOr = (value: unknown, fallback: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+/** Validates a native [longitude, latitude] payload; map events can omit it. */
+function coordinateFrom(value: unknown): Coordinate | null {
+  if (
+    !Array.isArray(value) ||
+    value.length < 2 ||
+    !Number.isFinite(value[0]) ||
+    !Number.isFinite(value[1])
+  ) {
+    return null;
+  }
+  return fromPosition(value as number[]);
+}
+
+function MapUnavailable({
+  title,
+  detail,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  detail?: string;
+  actionLabel?: string;
+  onAction: () => void;
+}) {
+  const { colors } = useTheme();
+  const accent = useAccent();
+  return (
+    <View
+      style={[
+        StyleSheet.absoluteFill,
+        styles.unavailable,
+        { backgroundColor: colors.background },
+      ]}
+    >
+      <View style={[styles.unavailableCard, { backgroundColor: colors.card }]}>
+        <Text style={[styles.unavailableTitle, { color: colors.text }]}>
+          {title}
+        </Text>
+        {detail ? (
+          <Text style={[styles.unavailableDetail, { color: colors.text }]}>
+            {detail}
+          </Text>
+        ) : (
+          <ActivityIndicator color={accent} />
+        )}
+        {actionLabel ? (
+          <Chip label={actionLabel} selected onPress={onAction} />
+        ) : null}
+      </View>
+    </View>
+  );
+}
 
 export function EmulatorScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
@@ -173,10 +235,14 @@ export function EmulatorScreen({ navigation, route }: Props) {
       const zoom = options.zoom ?? view.current.zoom;
       const stop = { center: position(coordinate), zoom };
       const camera = cameraRef.current;
-      if (options.fly) {
-        camera?.flyTo?.({ ...stop, duration: 1200 });
-      } else {
-        camera?.easeTo?.({ ...stop, duration: 500 });
+      try {
+        const animation = options.fly
+          ? camera?.flyTo?.({ ...stop, duration: 1200 })
+          : camera?.easeTo?.({ ...stop, duration: 500 });
+        Promise.resolve(animation).catch(() => undefined);
+      } catch {
+        // The native camera is not mounted yet (map loading or paused);
+        // the pin state below still updates and the map catches up later.
       }
       view.current = { ...view.current, center: coordinate, zoom };
       centerRef.current = coordinate;
@@ -184,6 +250,46 @@ export function EmulatorScreen({ navigation, route }: Props) {
     },
     [],
   );
+
+  // Map safe mode: if the map started last time but never reported back, the
+  // device probably froze or crashed in the map, so wait for the user to retry.
+  const [mapPhase, setMapPhase] = useState<'checking' | 'ready' | 'paused'>(
+    'checking',
+  );
+  const mapHealthy = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (await mapFailedLastTime()) {
+        if (!cancelled) {
+          setMapPhase('paused');
+        }
+        return;
+      }
+      await markMapStarting();
+      if (!cancelled) {
+        setMapPhase('ready');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const reportMapHealthy = () => {
+    if (!mapHealthy.current) {
+      mapHealthy.current = true;
+      markMapHealthy();
+    }
+  };
+  const startMap = () => {
+    setFailed(false);
+    setLoaded(false);
+    markMapStarting().finally(() => {
+      if (mounted.current) {
+        setMapPhase('ready');
+      }
+    });
+  };
 
   // Locations chosen on other screens (favorites, coordinates) move the map.
   useEffect(() => {
@@ -202,7 +308,7 @@ export function EmulatorScreen({ navigation, route }: Props) {
   }, [follow, active, simulated, moveCamera]);
 
   useEffect(() => {
-    if (loaded) {
+    if (loaded || mapPhase !== 'ready') {
       return;
     }
     const timeout = setTimeout(() => {
@@ -210,7 +316,7 @@ export function EmulatorScreen({ navigation, route }: Props) {
       setLoaded(true);
     }, 15000);
     return () => clearTimeout(timeout);
-  }, [loaded, revision]);
+  }, [loaded, revision, mapPhase]);
 
   useFocusEffect(
     useCallback(() => {
@@ -276,13 +382,12 @@ export function EmulatorScreen({ navigation, route }: Props) {
     moveCamera(place, { zoom: 16, fly: true });
   };
 
-  const handleMapPress = (lngLat: [number, number]) => {
+  const handleMapPress = (coordinate: Coordinate) => {
     if (results || searchError) {
       dismissSearch();
       return;
     }
     Keyboard.dismiss();
-    const coordinate = fromPosition(lngLat);
     if (mode === 'route') {
       if (activeKind === 'route') {
         setNotice('Stop the route before editing waypoints.');
@@ -401,6 +506,17 @@ export function EmulatorScreen({ navigation, route }: Props) {
   };
 
   const mapStyle = mapStyleFor(preferences.mapStyle);
+  const mapKey = `${preferences.mapStyle}-${revision}`;
+  // Only read when the map mounts; a fresh object every render would churn native props.
+  const initialViewState = useMemo(
+    () => ({
+      center: position(view.current.center),
+      zoom: view.current.zoom,
+      bearing: view.current.bearing,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mapKey, mapPhase],
+  );
   const waypoints = store.route;
   const loop = settings.routeMode === 'loop';
   const routeMeters =
@@ -601,161 +717,210 @@ export function EmulatorScreen({ navigation, route }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Map
-        key={`${preferences.mapStyle}-${revision}`}
-        style={StyleSheet.absoluteFill}
-        mapStyle={mapStyle.style}
-        logo={false}
-        attributionPosition={{ bottom: panelHeight + 8, left: 8 }}
-        compassPosition={{ top: insets.top + 132, left: 12 }}
-        onPress={event => handleMapPress(event.nativeEvent.lngLat)}
-        onLongPress={event =>
-          setPressed(fromPosition(event.nativeEvent.lngLat))
-        }
-        onRegionWillChange={event => {
-          if (event.nativeEvent.userInteraction) {
-            setDragging(true);
-            setFollow(false);
-            setPlaceName(undefined);
-          }
-        }}
-        onRegionDidChange={event => {
-          const { center: lngLat, zoom, bearing } = event.nativeEvent;
-          const coordinate = fromPosition(lngLat);
-          view.current = { center: coordinate, zoom, bearing };
-          setCenter(coordinate);
-          setMapBearing(bearing);
-          setDragging(false);
-        }}
-        onDidFinishLoadingMap={() => {
-          setLoaded(true);
-          setFailed(false);
-        }}
-        onDidFailLoadingMap={() => {
-          setFailed(true);
-          setLoaded(true);
-        }}
-      >
-        <Camera
-          ref={cameraRef}
-          initialViewState={{
-            center: position(view.current.center),
-            zoom: view.current.zoom,
-            bearing: view.current.bearing,
-          }}
-        />
-        {store.target && (
-          <GeoJSONSource
-            id="radius"
-            data={circle(position(store.target), settings.radiusMeters, {
-              units: 'meters',
-              steps: 96,
-            })}
-          >
-            <Layer
-              id="radius-fill"
-              type="fill"
-              paint={{ 'fill-color': palette.target, 'fill-opacity': 0.15 }}
-            />
-            <Layer
-              id="radius-line"
-              type="line"
-              paint={{ 'line-color': palette.target, 'line-width': 2 }}
-            />
-          </GeoJSONSource>
-        )}
-        {routeLine && (
-          <GeoJSONSource id="route" data={routeLine}>
-            <Layer
-              id="route-casing"
-              type="line"
-              layout={{ 'line-join': 'round', 'line-cap': 'round' }}
-              paint={{ 'line-color': '#FFFFFF', 'line-width': 7 }}
-            />
-            <Layer
-              id="route-line"
-              type="line"
-              layout={{ 'line-join': 'round', 'line-cap': 'round' }}
-              paint={{ 'line-color': palette.route, 'line-width': 4 }}
-            />
-          </GeoJSONSource>
-        )}
-        {waypoints.length > 0 && (
-          <GeoJSONSource
-            id="waypoints"
-            data={featureCollection(
-              waypoints.map(item => point(position(item))),
-            )}
-          >
-            <Layer
-              id="waypoint-dots"
-              type="circle"
-              paint={{
-                'circle-radius': 6,
-                'circle-color': palette.route,
-                'circle-stroke-width': 2,
-                'circle-stroke-color': '#FFFFFF',
+      {mapPhase === 'ready' ? (
+        <ErrorBoundary
+          key={mapKey}
+          renderFallback={(report, reset) => (
+            <MapUnavailable
+              title="The map stopped working"
+              detail={report.message}
+              actionLabel="Reload map"
+              onAction={() => {
+                reset();
+                setLoaded(false);
+                setRevision(value => value + 1);
               }}
             />
-          </GeoJSONSource>
-        )}
-        {waypoints.length > 0 && (
-          <ViewAnnotation
-            id="route-start"
-            lngLat={position(waypoints[0])}
-            title="Route start"
+          )}
+        >
+          <Map
+            style={StyleSheet.absoluteFill}
+            mapStyle={mapStyle.style}
+            androidView="texture"
+            logo={false}
+            attributionPosition={{
+              bottom: Math.round(panelHeight + 8),
+              left: 8,
+            }}
+            compassPosition={{ top: Math.round(insets.top + 132), left: 12 }}
+            onPress={event => {
+              const coordinate = coordinateFrom(event?.nativeEvent?.lngLat);
+              if (coordinate) {
+                handleMapPress(coordinate);
+              }
+            }}
+            onLongPress={event => {
+              const coordinate = coordinateFrom(event?.nativeEvent?.lngLat);
+              if (coordinate) {
+                setPressed(coordinate);
+              }
+            }}
+            onRegionWillChange={event => {
+              if (event?.nativeEvent?.userInteraction) {
+                setDragging(true);
+                setFollow(false);
+                setPlaceName(undefined);
+              }
+            }}
+            onRegionDidChange={event => {
+              reportMapHealthy();
+              setDragging(false);
+              const coordinate = coordinateFrom(event?.nativeEvent?.center);
+              if (!coordinate) {
+                return;
+              }
+              const zoom = finiteOr(event.nativeEvent.zoom, view.current.zoom);
+              const bearing = finiteOr(event.nativeEvent.bearing, 0);
+              view.current = { center: coordinate, zoom, bearing };
+              setCenter(coordinate);
+              setMapBearing(bearing);
+            }}
+            onDidFinishLoadingMap={() => {
+              reportMapHealthy();
+              setLoaded(true);
+              setFailed(false);
+            }}
+            onDidFinishRenderingMap={reportMapHealthy}
+            onDidFailLoadingMap={() => {
+              reportMapHealthy();
+              setFailed(true);
+              setLoaded(true);
+            }}
           >
-            <View style={[styles.marker, { backgroundColor: palette.play }]}>
-              <Text style={styles.markerLabel}>A</Text>
-            </View>
-          </ViewAnnotation>
-        )}
-        {waypoints.length > 1 && (
-          <ViewAnnotation
-            id="route-end"
-            lngLat={position(waypoints[waypoints.length - 1])}
-            title="Route end"
-          >
-            <View style={[styles.marker, { backgroundColor: palette.stop }]}>
-              <Text style={styles.markerLabel}>B</Text>
-            </View>
-          </ViewAnnotation>
-        )}
-        {store.target && (
-          <ViewAnnotation
-            id="target"
-            lngLat={position(store.target)}
-            title="Radius target"
-          >
-            <View style={[styles.marker, { backgroundColor: palette.target }]}>
-              <Text style={styles.markerLabel}>T</Text>
-            </View>
-          </ViewAnnotation>
-        )}
-        {realLocation && (
-          <ViewAnnotation
-            id="real"
-            lngLat={position(realLocation)}
-            title="Captured real location"
-          >
-            <View style={[styles.dot, { backgroundColor: palette.real }]} />
-          </ViewAnnotation>
-        )}
-        {simulated && (active || status.state === 'completed') && (
-          <ViewAnnotation
-            id="simulated"
-            lngLat={position(simulated)}
-            title="Mocked location"
-          >
-            <View style={styles.halo}>
-              <View style={[styles.dot, { backgroundColor: palette.mock }]} />
-            </View>
-          </ViewAnnotation>
-        )}
-      </Map>
+            <Camera ref={cameraRef} initialViewState={initialViewState} />
+            {store.target && (
+              <GeoJSONSource
+                id="radius"
+                data={circle(position(store.target), settings.radiusMeters, {
+                  units: 'meters',
+                  steps: 96,
+                })}
+              >
+                <Layer
+                  id="radius-fill"
+                  type="fill"
+                  paint={{ 'fill-color': palette.target, 'fill-opacity': 0.15 }}
+                />
+                <Layer
+                  id="radius-line"
+                  type="line"
+                  paint={{ 'line-color': palette.target, 'line-width': 2 }}
+                />
+              </GeoJSONSource>
+            )}
+            {routeLine && (
+              <GeoJSONSource id="route" data={routeLine}>
+                <Layer
+                  id="route-casing"
+                  type="line"
+                  layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+                  paint={{ 'line-color': '#FFFFFF', 'line-width': 7 }}
+                />
+                <Layer
+                  id="route-line"
+                  type="line"
+                  layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+                  paint={{ 'line-color': palette.route, 'line-width': 4 }}
+                />
+              </GeoJSONSource>
+            )}
+            {waypoints.length > 0 && (
+              <GeoJSONSource
+                id="waypoints"
+                data={featureCollection(
+                  waypoints.map(item => point(position(item))),
+                )}
+              >
+                <Layer
+                  id="waypoint-dots"
+                  type="circle"
+                  paint={{
+                    'circle-radius': 6,
+                    'circle-color': palette.route,
+                    'circle-stroke-width': 2,
+                    'circle-stroke-color': '#FFFFFF',
+                  }}
+                />
+              </GeoJSONSource>
+            )}
+            {waypoints.length > 0 && (
+              <ViewAnnotation
+                id="route-start"
+                lngLat={position(waypoints[0])}
+                title="Route start"
+              >
+                <View
+                  style={[styles.marker, { backgroundColor: palette.play }]}
+                >
+                  <Text style={styles.markerLabel}>A</Text>
+                </View>
+              </ViewAnnotation>
+            )}
+            {waypoints.length > 1 && (
+              <ViewAnnotation
+                id="route-end"
+                lngLat={position(waypoints[waypoints.length - 1])}
+                title="Route end"
+              >
+                <View
+                  style={[styles.marker, { backgroundColor: palette.stop }]}
+                >
+                  <Text style={styles.markerLabel}>B</Text>
+                </View>
+              </ViewAnnotation>
+            )}
+            {store.target && (
+              <ViewAnnotation
+                id="target"
+                lngLat={position(store.target)}
+                title="Radius target"
+              >
+                <View
+                  style={[styles.marker, { backgroundColor: palette.target }]}
+                >
+                  <Text style={styles.markerLabel}>T</Text>
+                </View>
+              </ViewAnnotation>
+            )}
+            {realLocation && (
+              <ViewAnnotation
+                id="real"
+                lngLat={position(realLocation)}
+                title="Captured real location"
+              >
+                <View style={[styles.dot, { backgroundColor: palette.real }]} />
+              </ViewAnnotation>
+            )}
+            {simulated && (active || status.state === 'completed') && (
+              <ViewAnnotation
+                id="simulated"
+                lngLat={position(simulated)}
+                title="Mocked location"
+              >
+                <View style={styles.halo}>
+                  <View
+                    style={[styles.dot, { backgroundColor: palette.mock }]}
+                  />
+                </View>
+              </ViewAnnotation>
+            )}
+          </Map>
+        </ErrorBoundary>
+      ) : (
+        <MapUnavailable
+          title={mapPhase === 'paused' ? 'Map paused' : 'Starting map…'}
+          detail={
+            mapPhase === 'paused'
+              ? 'The map did not finish starting last time. Search, coordinates, favorites and mocking still work without it.'
+              : undefined
+          }
+          actionLabel={mapPhase === 'paused' ? 'Load map' : undefined}
+          onAction={startMap}
+        />
+      )}
 
-      <CrosshairPin lifted={dragging} />
-      {!loaded && (
+      {mapPhase === 'ready' && <CrosshairPin lifted={dragging} />}
+      {mapPhase === 'ready' && !loaded && (
         <ActivityIndicator
           style={styles.loading}
           color={accent}
@@ -1306,6 +1471,17 @@ export function EmulatorScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  unavailable: { alignItems: 'center', justifyContent: 'center', padding: 24 },
+  unavailableCard: {
+    maxWidth: 360,
+    borderRadius: 16,
+    padding: 20,
+    gap: 12,
+    alignItems: 'center',
+    elevation: 4,
+  },
+  unavailableTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  unavailableDetail: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
   flex: { flex: 1 },
   flat: { elevation: 0, shadowOpacity: 0 },
   disabled: { opacity: 0.4 },

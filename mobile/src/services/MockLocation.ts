@@ -68,6 +68,9 @@ interface NativeLocation {
   ): Promise<SimulationStatus>;
   /** Teleports a running or paused single-location simulation. */
   moveTo(latitude: number, longitude: number): Promise<SimulationStatus>;
+  /** Text of the last recorded native or React Native fatal error, if any. */
+  getLastCrashReport?(): Promise<string | null>;
+  clearLastCrashReport?(): Promise<null>;
   addListener(event: string): void;
   removeListeners(count: number): void;
 }

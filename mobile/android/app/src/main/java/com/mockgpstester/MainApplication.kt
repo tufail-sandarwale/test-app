@@ -19,11 +19,16 @@ class MainApplication : Application(), ReactApplication {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
         },
+      exceptionHandler = { error ->
+        CrashRecorder.record(applicationContext, "React Native", error)
+        throw error
+      },
     )
   }
 
   override fun onCreate() {
     super.onCreate()
+    CrashRecorder.install(this)
     loadReactNative(this)
   }
 }

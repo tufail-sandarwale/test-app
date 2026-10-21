@@ -14,6 +14,7 @@ Android GPS testing application using React Native, TypeScript, native Kotlin, a
 - **Favorites and history:** star button to save or remove the pin as a named favorite; the last 20 mocked locations are kept as history in Favorites.
 - **Map styles:** Streets, Bright, Light and Dark (OpenFreeMap), and Satellite (Esri World Imagery). The chosen style persists.
 - **Side menu:** Favorites & history, Saved routes, Enter coordinates, Simulation status, Settings, Device setup (flagged when action is needed), and Cloud presets. A banner on the map links to Device Setup when mock-location setup is incomplete or a setup error occurs.
+- **Self-diagnosis instead of blank screens:** JavaScript errors show a readable error screen with **Try again**, **Share details** and **Reset saved data**. Native crashes and fatal React Native errors are written to app storage, and the next launch shows **The app closed unexpectedly last time** with a **Share report** button, so testers can send details without USB debugging. If the map started but never reported back (a freeze or crash in the map), the next launch opens in **Map paused** mode, where everything except the map still works, with a **Load map** button. Startup never waits more than 8 seconds for saved data.
 - Captured-real and simulated markers, target radius circle, map retry and manual coordinate entry.
 - Foreground Kotlin simulation service, start/pause/resume/stop, persistent notification controls, status events, precise-location/mock-app prerequisites, and provider cleanup/recovery.
 - WGS84 route interpolation using GeographicLib, continuous return legs for loops, speed, duration, interval, progress, destination waypoint, and remaining distance.
@@ -29,14 +30,14 @@ Android GPS testing application using React Native, TypeScript, native Kotlin, a
 | --- | --- |
 | `npm run typecheck` | Pass |
 | `npm run lint` | Pass, no warnings |
-| `npm test -- --runInBand` | Pass, 66 tests in 7 suites: emulator map (play/stop, move here, route drawing, joystick steering, search and search races, favorites, map styles, long-press, setup banners), navigation, joystick math/throttle, geocoding, geometry, persistence/history, native contract, status races, cloud |
+| `npm test -- --runInBand` | Pass, 75 tests in 8 suites: emulator map (play/stop, move here, route drawing, joystick steering, search and search races, favorites, map styles, long-press, setup banners, map safe mode, malformed map events), diagnostics (error screen, global error capture, crash report notice, startup timeout), navigation, joystick math/throttle, geocoding, geometry, persistence/history, native contract, status races, cloud |
 | Gradle wrapper `--version` | Pass, Gradle 9.4.1 downloaded using Windows certificate trust |
 | React Native Gradle plugins | Compiled using the approved Maven mirror |
 | SDK tools, Platform 37.0, Build Tools 37.0.0, CMake 3.22.1 | Installed and verified |
 | NDK 27.1.12297006 | Official archive checksum verified; compiler runs |
 | `adb version` / `adb devices` | Platform-Tools 37.0.1 runs; no device connected |
 | Android `:app:assembleDebug` | Pass; full native map, storage, service, and bridge |
-| Kotlin `:app:testDebugUnitTest` | Pass, 9 tests: lifecycle, invalid inputs, date line, completion, continuous loops, joystick steering, steering timeout, paused joystick, teleport vs. routes |
+| Kotlin `:app:testDebugUnitTest` | Pass, 11 tests: lifecycle, invalid inputs, date line, completion, continuous loops, joystick steering, steering timeout, paused joystick, teleport vs. routes, crash report format and size cap |
 | `:app:assembleDebugAndroidTest` | Pass; device lifecycle test APK compiles; execution pending |
 | Backend pytest | Pass, 7 tests: auth, ownership, CRUD, rate limits, validation, migrations |
 | Metro production Android bundle | Pass; bundle and 22 asset files generated |
@@ -201,7 +202,7 @@ Build `:app:assembleStandalone` using the same Gradle command and approved-mirro
 
 Verified on 2026-09-19: standalone build passes, APK v2 signature verifies, bundled JavaScript and Hermes are present for arm64-v8a, armeabi-v7a, x86 and x86_64. Version `1.0-test`, minimum SDK 24, size approximately 114 MB. The custom variant explicitly disables cleartext traffic.
 
-Rebuilt on 2026-10-21 for the GPS emulator redesign with `-PreactNativeArchitectures=arm64-v8a :app:assembleStandalone` (clean `--rerun-tasks` build with JDK 17, React Native's recommended version, from the Gradle toolchain cache at `%USERPROFILE%\.gradle\jdks`; the machine's default Java is now 27, which was not tested with this build). The arm64 APK is 37.2 MB, v2 signature verifies with the development key, and the bundle contains the new map UI. The downloadable `releases/` APK is this build (SHA-256 `0FBB4176C7FB9162B1B784F8356214955E5ED0B5E814B533800BECE5D3E35B35`).
+Rebuilt on 2026-10-21 for the GPS emulator redesign with `-PreactNativeArchitectures=arm64-v8a :app:assembleStandalone`, using JDK 17 (React Native's recommended version) from the Gradle toolchain cache at `%USERPROFILE%\.gradle\jdks`. The machine's default Java is now 27, which was not tested with this build. Rebuilt again on 2026-10-22 after a tester reported a blank white screen, adding the self-diagnosis features listed above and rendering the map with a TextureView. The arm64 APK is 37.2 MB, its v2 signature verifies with the development key, and the bundle and native code contain the new UI, crash recorder and map safe mode. The downloadable `releases/` APK is this build (SHA-256 `CBEA093EEFD8B4868159258F068700A9C629BB5D5F5290B324FB2DFBC861E8A2`).
 
 Output: `mobile/android/app/build/outputs/apk/standalone/app-standalone.apk`. Transfer this APK to an Android 7.0+ phone, open it in the phone's file manager, and allow installation from that source if Android asks. Open **Mock GPS Tester** directly; no Expo, Metro, USB debugging or backend is required. Fresh map tiles still need internet. Optional cloud access requires an HTTPS server in this variant.
 
@@ -253,6 +254,10 @@ Release signing no longer falls back to the public debug key. Supply `MOCK_GPS_K
 2. The SDK path is now configured at user scope and in the project's ignored local properties. Platform 37.0, Build Tools 37.0.0, CMake 3.22.1, Platform-Tools 37.0.1, and NDK 27.1.12297006 are installed and the debug APK builds successfully. Android Studio/emulator remain uninstalled and no device is connected, so runtime validation is still blocked.
 3. The final `npm audit --omit=dev` reports 28 advisories: 1 low, 5 moderate, 22 high, 0 critical. These include React Native, CLI/Metro chains and MapLibre. The earlier full development audit reported 49. Run `npm audit` and `npm audit --omit=dev` for current details. Do not blindly use `npm audit fix --force`; compatible remediation and retesting are release requirements. Metro also emits a dependency private-featureflags export warning while successfully bundling.
 4. Select the workspace TypeScript version for editor diagnostics. For backend imports, select `.venv/Scripts/python.exe` using Python: Select Interpreter; the tests use this environment explicitly. The generated TypeScript configuration is inaccessible to Copilot under workspace rules; no compiler workaround was applied.
+5. **Blank white screen on a phone (reported 2026-10-21, cause not yet confirmed).** The redesigned build opened to a white screen on a tester's phone; no device log was available. In React Native's new architecture, a fatal error in a release build can tear down React while the app stays open, which leaves exactly this white screen. The current APK guards against every likely cause it can: on-screen error reporting, crash reports saved for the next launch, map safe mode, TextureView map rendering, validated map events, whole-number native ornament props and a startup timeout. If a phone still shows a problem:
+   - Swipe the app away from Recent apps and open it again. If the map caused the failure, it now opens in **Map paused** mode; if anything crashed, a report appears that you can send with **Share report**.
+   - If an error screen appears, use **Share details** (or take a screenshot) and send it to the developer.
+   - With a USB cable and USB debugging, `adb logcat "*:E"` shows the errors from the device log.
 
 For device discovery, check `adb devices`, USB authorization, and emulator startup. Android compilation is verified; device execution, screenshots, rotation/process restoration, and accessibility on real hardware remain unverified. The successful build emits dependency/template deprecation warnings, including APIs scheduled for removal in Gradle/AGP 10; do not upgrade that toolchain without compatibility testing.
 
