@@ -1,18 +1,19 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
-  HomeScreen,
   LocationDetailsScreen,
-  MapScreen,
   SavedLocationsScreen,
   SettingsScreen,
+  StatusScreen,
 } from '../screens/PhaseOneScreens';
+import { EmulatorScreen } from '../screens/EmulatorScreen';
 import { RoutesScreen } from '../screens/RoutesScreen';
 import { CloudScreen } from '../screens/CloudScreen';
 import { DeveloperSetupScreen } from '../screens/DeveloperSetupScreen';
+import type { EmulatorMode } from '../types/location';
 
 export type RootStackParamList = {
-  Home: undefined;
-  Map: undefined;
+  Home: { mode?: EmulatorMode } | undefined;
+  Status: undefined;
   LocationDetails: { id?: string } | undefined;
   SavedLocations: undefined;
   Settings: undefined;
@@ -30,18 +31,18 @@ export function RootNavigator() {
     >
       <Stack.Screen
         name="Home"
-        component={HomeScreen}
-        options={{ title: 'Mock GPS Tester' }}
+        component={EmulatorScreen}
+        options={{ title: 'Mock GPS Tester', headerShown: false }}
+      />
+      <Stack.Screen
+        name="Status"
+        component={StatusScreen}
+        options={{ title: 'Simulation Status' }}
       />
       <Stack.Screen
         name="Routes"
         component={RoutesScreen}
-        options={{ title: 'Routes' }}
-      />
-      <Stack.Screen
-        name="Map"
-        component={MapScreen}
-        options={{ title: 'Select Location' }}
+        options={{ title: 'Saved Routes' }}
       />
       <Stack.Screen
         name="LocationDetails"
@@ -51,7 +52,7 @@ export function RootNavigator() {
       <Stack.Screen
         name="SavedLocations"
         component={SavedLocationsScreen}
-        options={{ title: 'Saved Locations' }}
+        options={{ title: 'Favorites' }}
       />
       <Stack.Screen
         name="Settings"

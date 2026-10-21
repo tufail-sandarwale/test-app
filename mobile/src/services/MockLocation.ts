@@ -24,6 +24,7 @@ export interface LocationReading extends LocationConfig {
 export interface SimulationStatus {
   state: 'stopped' | 'starting' | 'running' | 'paused' | 'completed' | 'error';
   error?: string | null;
+  kind?: 'point' | 'route';
   location?: LocationReading;
   timestamp: number;
   progress?: number;
@@ -60,6 +61,13 @@ interface NativeLocation {
   pause(): Promise<SimulationStatus>;
   resume(): Promise<SimulationStatus>;
   stop(): Promise<SimulationStatus>;
+  /** Joystick input for a running single-location simulation. */
+  steer(
+    bearing: number,
+    speedMetersPerSecond: number,
+  ): Promise<SimulationStatus>;
+  /** Teleports a running or paused single-location simulation. */
+  moveTo(latitude: number, longitude: number): Promise<SimulationStatus>;
   addListener(event: string): void;
   removeListeners(count: number): void;
 }
@@ -124,6 +132,10 @@ export const MockLocation = {
   pause: () => requireNative().pause(),
   resume: () => requireNative().resume(),
   stop: () => requireNative().stop(),
+  steer: (bearing: number, speedMetersPerSecond: number) =>
+    requireNative().steer(bearing, speedMetersPerSecond),
+  moveTo: ({ latitude, longitude }: Coordinate) =>
+    requireNative().moveTo(latitude, longitude),
   getStatus: () => requireNative().getStatus(),
   subscribe(listener: (status: SimulationStatus) => void) {
     const subscription = new NativeEventEmitter(requireNative()).addListener(

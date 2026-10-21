@@ -31,7 +31,7 @@ data class SimulationConfig(
     }
 }
 
-data class SimulationFrame(val coordinate: Coordinate, val bearing: Double, val progress: Double, val waypoint: Int, val remainingMeters: Double, val elapsedSeconds: Double)
+data class SimulationFrame(val coordinate: Coordinate, val bearing: Double, val progress: Double, val waypoint: Int, val remainingMeters: Double, val elapsedSeconds: Double, val speed: Double = 0.0)
 
 class LocationSimulator(val config: SimulationConfig) {
     var state = "running"
@@ -42,6 +42,11 @@ class LocationSimulator(val config: SimulationConfig) {
         Geodesic.WGS84.Inverse(origin.latitude, origin.longitude, target.latitude, target.longitude)
     }
     val totalMeters = segments.sumOf { it.s12 }
+    val isRoute get() = segments.isNotEmpty()
+    private var position = config.points[0]
+    private var steerBearing = config.bearing
+    private var steerSpeed: Double? = null
+    private var steerAgeSeconds = 0.0
 
     init { require(config.points.size == 1 || totalMeters > 0.01) { "A route must contain distinct waypoints." } }
 
@@ -49,12 +54,28 @@ class LocationSimulator(val config: SimulationConfig) {
     fun resume() { check(state == "paused") { "Simulation is not paused." }; state = "running" }
     fun stop() { state = "stopped" }
 
+    /** Joystick input. Movement stops after [STEER_TIMEOUT_SECONDS] of running time without a new command. */
+    fun steer(bearing: Double, speed: Double) {
+        check(!isRoute) { "Joystick steering is only available for single-location simulations." }
+        require(bearing.isFinite() && bearing >= 0 && bearing < 360) { "Bearing must be 0 to less than 360." }
+        require(speed.isFinite() && speed in 0.0..MAX_SPEED) { "Speed must be 0 to 300 m/s." }
+        steerBearing = bearing
+        steerSpeed = speed
+        steerAgeSeconds = 0.0
+    }
+
+    fun moveTo(coordinate: Coordinate) {
+        check(!isRoute) { "Moving is only available for single-location simulations." }
+        position = coordinate
+    }
+
     fun advance(seconds: Double): SimulationFrame {
         require(seconds.isFinite() && seconds >= 0) { "Elapsed time must be nonnegative." }
+        val before = elapsedSeconds
         if (state == "running") elapsedSeconds += seconds
         val limit = if (config.durationSeconds > 0) config.durationSeconds else 86400.0
         if (state == "running" && elapsedSeconds >= limit) { elapsedSeconds = limit; state = "completed" }
-        if (segments.isEmpty()) return SimulationFrame(config.points[0], config.bearing, 0.0, 0, 0.0, elapsedSeconds)
+        if (segments.isEmpty()) return holdOrSteer(elapsedSeconds - before)
         val travelled = elapsedSeconds * config.speed
         val routeDistance = if (config.loop) travelled % totalMeters else travelled.coerceAtMost(totalMeters)
         if (state == "running" && !config.loop && travelled >= totalMeters) state = "completed"
@@ -66,6 +87,23 @@ class LocationSimulator(val config: SimulationConfig) {
         }
         val origin = path[segmentIndex]
         val sample = Geodesic.WGS84.Direct(origin.latitude, origin.longitude, segments[segmentIndex].azi1, segmentDistance)
-        return SimulationFrame(Coordinate(sample.lat2, sample.lon2), (sample.azi2 + 360) % 360, routeDistance / totalMeters * 100, (segmentIndex + 1) % config.points.size + 1, totalMeters - routeDistance, elapsedSeconds)
+        return SimulationFrame(Coordinate(sample.lat2, sample.lon2), (sample.azi2 + 360) % 360, routeDistance / totalMeters * 100, (segmentIndex + 1) % config.points.size + 1, totalMeters - routeDistance, elapsedSeconds, config.speed)
+    }
+
+    private fun holdOrSteer(seconds: Double): SimulationFrame {
+        val speed = steerSpeed ?: return SimulationFrame(position, config.bearing, 0.0, 0, 0.0, elapsedSeconds, config.speed)
+        val movingSeconds = (STEER_TIMEOUT_SECONDS - steerAgeSeconds).coerceIn(0.0, seconds)
+        steerAgeSeconds += seconds
+        if (speed > 0 && movingSeconds > 0) {
+            val moved = Geodesic.WGS84.Direct(position.latitude, position.longitude, steerBearing, speed * movingSeconds)
+            position = Coordinate(moved.lat2, moved.lon2)
+        }
+        if (steerAgeSeconds >= STEER_TIMEOUT_SECONDS) steerSpeed = 0.0
+        return SimulationFrame(position, steerBearing, 0.0, 0, 0.0, elapsedSeconds, steerSpeed ?: 0.0)
+    }
+
+    companion object {
+        const val MAX_SPEED = 300.0
+        const val STEER_TIMEOUT_SECONDS = 3.0
     }
 }

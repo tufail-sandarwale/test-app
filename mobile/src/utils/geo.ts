@@ -23,6 +23,46 @@ export function position(coordinate: Coordinate): [number, number] {
   return [coordinate.longitude, coordinate.latitude];
 }
 
+/** Converts a map [longitude, latitude] pair into a valid coordinate, wrapping longitude. */
+export function fromPosition([longitude, latitude]:
+  | [number, number]
+  | number[]): Coordinate {
+  const wrapped =
+    longitude >= -180 && longitude <= 180
+      ? longitude
+      : ((((longitude + 180) % 360) + 360) % 360) - 180;
+  return {
+    latitude: Math.max(-90, Math.min(90, latitude)),
+    longitude: wrapped,
+  };
+}
+
+export function normalizeBearing(degrees: number) {
+  return ((degrees % 360) + 360) % 360;
+}
+
+export function formatCoordinate(coordinate: Coordinate, digits = 6) {
+  return `${coordinate.latitude.toFixed(
+    digits,
+  )}, ${coordinate.longitude.toFixed(digits)}`;
+}
+
+export function formatDistance(meters: number) {
+  return meters >= 1000
+    ? `${(meters / 1000).toFixed(meters >= 10000 ? 1 : 2)} km`
+    : `${Math.round(meters)} m`;
+}
+
+export function routeLengthMeters(points: Coordinate[], loop = false) {
+  const path = loop && points.length > 1 ? [...points, points[0]] : points;
+  return path
+    .slice(1)
+    .reduce(
+      (meters, point, index) => meters + distanceMeters(path[index], point),
+      0,
+    );
+}
+
 export function distanceMeters(origin: Coordinate, destination: Coordinate) {
   validateCoordinate(origin);
   validateCoordinate(destination);

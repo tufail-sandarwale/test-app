@@ -50,6 +50,7 @@ object SimulationState {
         putString("state", state)
         putString("error", error)
         putDouble("timestamp", timestamp.toDouble())
+        config?.let { putString("kind", if (it.points.size > 1) "route" else "point") }
         frame?.let { sample ->
             putDouble("progress", sample.progress)
             putInt("currentWaypoint", sample.waypoint)
@@ -61,7 +62,7 @@ object SimulationState {
                 putDouble("bearing", sample.bearing)
                 putDouble("accuracy", config?.accuracy ?: 5.0)
                 putDouble("altitude", config?.altitude ?: 0.0)
-                putDouble("speed", config?.speed ?: 0.0)
+                putDouble("speed", sample.speed)
                 putDouble("timestamp", timestamp.toDouble())
                 putString("provider", "gps")
             })

@@ -4,10 +4,11 @@ import type {
   Coordinate,
   LocationConfig,
   LocationPreset,
+  RecentLocation,
   RoutePreset,
   SimulationSettings,
 } from '../types/location';
-import { validateCoordinate } from '../utils/geo';
+import { distanceMeters, validateCoordinate } from '../utils/geo';
 import {
   validateLocation,
   validateSettings,
@@ -28,15 +29,19 @@ export const defaultSettings: SimulationSettings = {
   includeBoundary: false,
 };
 
+export const MAX_RECENT = 20;
+
 interface LocationState {
   presets: LocationPreset[];
   savedRoutes: RoutePreset[];
+  recent: RecentLocation[];
   selected: Coordinate | null;
   target: Coordinate | null;
   route: Coordinate[];
   settings: SimulationSettings;
   select: (coordinate: Coordinate) => void;
   setTarget: (coordinate: Coordinate) => void;
+  clearTarget: () => void;
   addWaypoint: (coordinate: Coordinate) => void;
   clearRoute: () => void;
   updateSettings: (settings: SimulationSettings) => void;
@@ -48,16 +53,38 @@ interface LocationState {
   importRoute: (name: string, points: Coordinate[], speedKmh: number) => void;
   deleteRoute: (id: string) => void;
   selectRoute: (id: string) => void;
+  addRecent: (coordinate: Coordinate, name?: string) => void;
+  clearRecent: () => void;
 }
 
 const identifier = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+/** Returns the favorite within a few meters of a coordinate, if any. */
+export function findPresetNear(
+  presets: LocationPreset[],
+  coordinate: Coordinate,
+  meters = 5,
+) {
+  return presets.find(preset => distanceMeters(preset, coordinate) <= meters);
+}
+
+function validateRecent(item: RecentLocation) {
+  validateCoordinate(item);
+  if (
+    !Number.isFinite(Date.parse(item.usedAt)) ||
+    (item.name !== undefined && validName(item.name) !== item.name)
+  ) {
+    throw new Error('Invalid recent location.');
+  }
+}
 
 export const useLocationStore = create<LocationState>()(
   persist(
     (set, get) => ({
       presets: [],
       savedRoutes: [],
+      recent: [],
       selected: null,
       target: null,
       route: [],
@@ -70,6 +97,7 @@ export const useLocationStore = create<LocationState>()(
         validateCoordinate(coordinate);
         set({ target: coordinate });
       },
+      clearTarget: () => set({ target: null }),
       addWaypoint: coordinate => {
         validateCoordinate(coordinate);
         set(state => {
@@ -189,6 +217,25 @@ export const useLocationStore = create<LocationState>()(
           settings: { ...state.settings, speedKmh: preset.speedKmh },
         }));
       },
+      addRecent: (coordinate, name) => {
+        validateCoordinate(coordinate);
+        const label =
+          name?.trim().slice(0, 80).trim() ||
+          findPresetNear(get().presets, coordinate)?.name;
+        const entry: RecentLocation = {
+          latitude: coordinate.latitude,
+          longitude: coordinate.longitude,
+          ...(label ? { name: label } : {}),
+          usedAt: new Date().toISOString(),
+        };
+        set(state => ({
+          recent: [
+            entry,
+            ...state.recent.filter(item => distanceMeters(item, entry) > 5),
+          ].slice(0, MAX_RECENT),
+        }));
+      },
+      clearRecent: () => set({ recent: [] }),
     }),
     {
       name: 'mock-gps-local-v1',
@@ -234,6 +281,12 @@ export const useLocationStore = create<LocationState>()(
           metadata(item);
           validateRoute(item.points, item.speedKmh);
         });
+        // Data saved before history existed has no recent list.
+        const recent = data.recent ?? [];
+        if (!Array.isArray(recent) || recent.length > MAX_RECENT) {
+          throw new Error('Invalid saved data.');
+        }
+        recent.forEach(validateRecent);
         return {
           ...current,
           selected: data.selected,
@@ -242,6 +295,7 @@ export const useLocationStore = create<LocationState>()(
           settings: data.settings,
           presets: data.presets,
           savedRoutes: data.savedRoutes,
+          recent,
         };
       },
       partialize: state => ({
@@ -251,6 +305,7 @@ export const useLocationStore = create<LocationState>()(
         settings: state.settings,
         presets: state.presets,
         savedRoutes: state.savedRoutes,
+        recent: state.recent,
       }),
       onRehydrateStorage: () => (_state, error) =>
         usePersistenceStatus.setState({

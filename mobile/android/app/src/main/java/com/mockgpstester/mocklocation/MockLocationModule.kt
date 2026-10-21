@@ -83,6 +83,36 @@ class MockLocationModule(private val context: ReactApplicationContext) : ReactCo
     @ReactMethod fun resume(promise: Promise) = command(MockLocationService.RESUME, listOf("paused"), promise)
     @ReactMethod fun stop(promise: Promise) = command(MockLocationService.STOP, listOf("starting", "running", "paused"), promise)
 
+    @ReactMethod fun steer(bearing: Double, speedMetersPerSecond: Double, promise: Promise) {
+        handler.post {
+            try {
+                require(bearing.isFinite() && bearing >= 0 && bearing < 360) { "Bearing must be 0 to less than 360." }
+                require(speedMetersPerSecond.isFinite() && speedMetersPerSecond in 0.0..LocationSimulator.MAX_SPEED) { "Speed must be 0 to 300 m/s." }
+                requireSingleLocation()
+                context.startService(Intent(context, MockLocationService::class.java).setAction(MockLocationService.STEER)
+                    .putExtra("bearing", bearing).putExtra("speed", speedMetersPerSecond))
+                promise.resolve(SimulationState.snapshot())
+            } catch (error: Exception) { promise.reject("STEER_FAILED", error.message, error) }
+        }
+    }
+
+    @ReactMethod fun moveTo(latitude: Double, longitude: Double, promise: Promise) {
+        handler.post {
+            try {
+                Coordinate(latitude, longitude)
+                requireSingleLocation()
+                context.startService(Intent(context, MockLocationService::class.java).setAction(MockLocationService.MOVE)
+                    .putExtra("latitude", latitude).putExtra("longitude", longitude))
+                promise.resolve(SimulationState.snapshot())
+            } catch (error: Exception) { promise.reject("MOVE_FAILED", error.message, error) }
+        }
+    }
+
+    private fun requireSingleLocation() {
+        check(SimulationState.state in listOf("running", "paused")) { "Start a location simulation first." }
+        check(SimulationState.config?.points?.size == 1) { "Joystick and move are only available for single-location simulations, not routes." }
+    }
+
     private fun command(action: String, allowed: List<String>, promise: Promise) {
         handler.post {
             try {

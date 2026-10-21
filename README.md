@@ -1,17 +1,25 @@
 # Mock GPS Tester
 
-Android GPS testing application using React Native, TypeScript, native Kotlin, and supported Android mock-location APIs. Core simulation runs locally, independently of the optional FastAPI backend.
+Android GPS testing application using React Native, TypeScript, native Kotlin, and supported Android mock-location APIs. The app opens on a full-screen map in the style of popular "GPS emulator" apps: move the map under the center pin, press play, and the device reports that location. Core simulation runs locally, independently of the optional FastAPI backend.
 
 **Implementation and automated builds are available. Device execution was explicitly deferred by the user because no phone/emulator is connected. This is a development build, not a device-verified or production-certified release.**
 
 ## Implemented
 
-- MapLibre map selection, draggable selected point, target circle, route preview, captured-real and simulated markers, retry and manual coordinate entry.
+- **GPS emulator map (home screen):** full-screen MapLibre map with a fixed center pin, live pin coordinates (tap to share), a big play/stop button, pause/resume, and **Location / Route / Joystick** modes. Tap the map to move the pin; long-press for actions (mock here, add to favorites, add route waypoint, set radius target, share coordinates).
+- **Place search:** search bar for place names (OpenStreetMap Nominatim, on submit only) or typed `latitude, longitude` coordinates, which work offline.
+- **Live moves:** while a location is mocked, pan the map and choose **Move mock here** to teleport without restarting the service. A **follow** button keeps the camera on the mocked location.
+- **Joystick mode:** start at the pin, then drag the on-screen joystick to walk or drive. Up on screen follows the map rotation; Walk/Run/Bike/Car presets set the top speed (5/10/20/60 km/h). Native steering stops on its own if joystick updates stop for 3 seconds, so a lost touch or a closed app never leaves the location drifting. TalkBack users can steer with the joystick's north/east/south/west/stop actions.
+- **Route mode:** tap the map (or **+ Pin**) to draw waypoints with A/B markers, undo/clear, Walk/Bike/Car speed presets, loop toggle, live distance/ETA, progress and remaining distance while driving, and save to Saved Routes.
+- **Favorites and history:** star button to save or remove the pin as a named favorite; the last 20 mocked locations are kept as history in Favorites.
+- **Map styles:** Streets, Bright, Light and Dark (OpenFreeMap), and Satellite (Esri World Imagery). The chosen style persists.
+- **Side menu:** Favorites & history, Saved routes, Enter coordinates, Simulation status, Settings, Device setup (flagged when action is needed), and Cloud presets. A banner on the map links to Device Setup when mock-location setup is incomplete or a setup error occurs.
+- Captured-real and simulated markers, target radius circle, map retry and manual coordinate entry.
 - Foreground Kotlin simulation service, start/pause/resume/stop, persistent notification controls, status events, precise-location/mock-app prerequisites, and provider cleanup/recovery.
 - WGS84 route interpolation using GeographicLib, continuous return legs for loops, speed, duration, interval, progress, destination waypoint, and remaining distance.
 - Default 100 m radius testing with strict `distance < radius`, optionally inclusive; Turf distance calculations and map circles.
-- Validated local location CRUD, route CRUD, settings and selections persisted in AsyncStorage through Zustand. Invalid restored data is rejected with an error.
-- Home, Map, Location Details, Saved Locations, Routes, Settings, and optional Cloud Presets screens with light/dark themes.
+- Validated local location CRUD, route CRUD, history, settings and selections persisted in AsyncStorage through Zustand. Invalid restored data is rejected with an error; data saved by earlier versions (without history) still loads.
+- Simulation Status, Location Details, Favorites, Saved Routes, Settings, and optional Cloud Presets screens with light/dark themes.
 - FastAPI, SQLAlchemy, PostgreSQL-compatible Alembic migrations, Argon2 passwords, expiring JWTs, ownership-scoped location/route CRUD, rate limits, and request validation.
 - Optional Axios cloud login/register, upload/download copies, paginated listing, and cloud deletion. Tokens stay in memory; cloud outages do not stop native simulation.
 
@@ -21,14 +29,14 @@ Android GPS testing application using React Native, TypeScript, native Kotlin, a
 | --- | --- |
 | `npm run typecheck` | Pass |
 | `npm run lint` | Pass, no warnings |
-| `npm test -- --runInBand` | Pass, 26 tests: navigation, geometry, persistence, native contract, status races, cloud |
+| `npm test -- --runInBand` | Pass, 66 tests in 7 suites: emulator map (play/stop, move here, route drawing, joystick steering, search and search races, favorites, map styles, long-press, setup banners), navigation, joystick math/throttle, geocoding, geometry, persistence/history, native contract, status races, cloud |
 | Gradle wrapper `--version` | Pass, Gradle 9.4.1 downloaded using Windows certificate trust |
 | React Native Gradle plugins | Compiled using the approved Maven mirror |
 | SDK tools, Platform 37.0, Build Tools 37.0.0, CMake 3.22.1 | Installed and verified |
 | NDK 27.1.12297006 | Official archive checksum verified; compiler runs |
 | `adb version` / `adb devices` | Platform-Tools 37.0.1 runs; no device connected |
 | Android `:app:assembleDebug` | Pass; full native map, storage, service, and bridge |
-| Kotlin `:app:testDebugUnitTest` | Pass, 5 tests: lifecycle, invalid inputs, date line, completion, continuous loops |
+| Kotlin `:app:testDebugUnitTest` | Pass, 9 tests: lifecycle, invalid inputs, date line, completion, continuous loops, joystick steering, steering timeout, paused joystick, teleport vs. routes |
 | `:app:assembleDebugAndroidTest` | Pass; device lifecycle test APK compiles; execution pending |
 | Backend pytest | Pass, 7 tests: auth, ownership, CRUD, rate limits, validation, migrations |
 | Metro production Android bundle | Pass; bundle and 22 asset files generated |
@@ -42,7 +50,7 @@ Android GPS testing application using React Native, TypeScript, native Kotlin, a
 
 Android's supported mock-location configuration is required. Enable Developer Options and select **Mock GPS Tester** under **Select mock location app**. Enable device Location and grant precise location permission. Allow notifications so foreground controls are visible.
 
-Open **Device Setup** from the Home screen for a live checklist of Developer Options, mock location app, precise location, Location services, and notifications. Each item shows its status and a button that opens the matching Android Settings screen; the status refreshes when you return to the app. Android does not allow apps to turn Developer Options on or off, so the user always flips the switch: to enable, tap **Build number** 7 times in About phone; to disable, turn off the switch at the top of Developer Options (blocked in-app while a simulation is active). Some manufacturers' Settings screens differ; if a screen is unavailable, general Settings opens instead.
+Open **Device Setup** from the side menu (or the map's setup banner) for a live checklist of Developer Options, mock location app, precise location, Location services, and notifications. Each item shows its status and a button that opens the matching Android Settings screen; the status refreshes when you return to the app. Android does not allow apps to turn Developer Options on or off, so the user always flips the switch: to enable, tap **Build number** 7 times in About phone; to disable, turn off the switch at the top of Developer Options (blocked in-app while a simulation is active). Some manufacturers' Settings screens differ; if a screen is unavailable, general Settings opens instead.
 
 The native implementation reports missing configuration with:
 
@@ -193,24 +201,32 @@ Build `:app:assembleStandalone` using the same Gradle command and approved-mirro
 
 Verified on 2026-09-19: standalone build passes, APK v2 signature verifies, bundled JavaScript and Hermes are present for arm64-v8a, armeabi-v7a, x86 and x86_64. Version `1.0-test`, minimum SDK 24, size approximately 114 MB. The custom variant explicitly disables cleartext traffic.
 
+Rebuilt on 2026-10-21 for the GPS emulator redesign with `-PreactNativeArchitectures=arm64-v8a :app:assembleStandalone` (clean `--rerun-tasks` build with JDK 17, React Native's recommended version, from the Gradle toolchain cache at `%USERPROFILE%\.gradle\jdks`; the machine's default Java is now 27, which was not tested with this build). The arm64 APK is 37.2 MB, v2 signature verifies with the development key, and the bundle contains the new map UI. The downloadable `releases/` APK is this build (SHA-256 `0FBB4176C7FB9162B1B784F8356214955E5ED0B5E814B533800BECE5D3E35B35`).
+
 Output: `mobile/android/app/build/outputs/apk/standalone/app-standalone.apk`. Transfer this APK to an Android 7.0+ phone, open it in the phone's file manager, and allow installation from that source if Android asks. Open **Mock GPS Tester** directly; no Expo, Metro, USB debugging or backend is required. Fresh map tiles still need internet. Optional cloud access requires an HTTPS server in this variant.
 
 The standalone variant uses the same app ID and development signing key as the debug build, so it can replace that build while retaining saved presets. Device execution remains unverified until installed on a phone/emulator. Android mock-app selection and precise-location permission are still required for simulation.
 
 ### Test a location or route
 
-1. Select this app as the mock app in Developer Options and enable device Location.
-2. Capture Real Location before starting simulation. This is a timestamped snapshot, not a concurrent live real-GPS feed. Mock or stale readings are rejected; capture times out after 15 seconds.
-3. Select Location on the map, drag the selected marker, or use Enter Location Details for manual coordinates. Save a named preset as needed.
-4. Set Target to draw the radius. Settings defaults to 100 m and exclusive boundary; the Home screen compares the last simulated reading to this target.
-5. Start Simulation. Home and the Android notification provide pause/resume/stop. Pausing removes test providers and releases the wake lock; elapsed route time is frozen. Stopping removes the foreground notification and providers.
-6. For routes, add at least two distinct waypoints on the map, save from Routes, set speed in Settings, and Start Route. Loop mode includes travel back to the first point rather than teleporting.
+1. Select this app as the mock app in Developer Options and enable device Location. If anything is missing, the map shows a **Device setup** banner with a **Fix** button.
+2. Optional: press the target button (**Go to my real location**) before mocking. It captures a timestamped real snapshot, not a concurrent live real-GPS feed, and centers the map on it. Mock or stale readings are rejected; capture times out after 15 seconds.
+3. **Location mode:** move the map so the red pin is on the place you want, search for a place, type `lat, lng` in the search bar, or use **Coordinates…** for full manual entry. Press the green play button. The button turns red; press it again to stop. While mocking, pan elsewhere and press **Move mock here** to jump without restarting.
+4. **Route mode:** tap the map to add waypoints (or **+ Pin** for the pin location), pick Walk/Bike/Car or set any speed in Settings, toggle **Loop** if needed, and press play. Loop mode travels back to the first point instead of teleporting. **Save** stores the route under Saved Routes.
+5. **Joystick mode:** pick a top speed, press play, then drag the joystick. Releasing it stops movement. Joystick control is available only while running; pausing freezes the position.
+6. Use the star to save favorites, and **Set target here** (or long-press, **Set as radius target**) to draw the radius. Settings defaults to 100 m with an exclusive boundary; the bottom panel compares the mocked (or pin) location with the target.
+7. The map's pause button and the Android notification pause/resume/stop. Pausing removes test providers and releases the wake lock; elapsed route time is frozen. Stopping removes the foreground notification and providers.
 
-Map markers: S selected, T target, R captured real, M last simulated. The native route uses WGS84 ellipsoidal geometry; Turf radius/distance uses a spherical geodesic approximation, so small differences can occur. Radius is an in-app comparison, not Android GeofencingClient registration. It does not infer another app's geofence result.
+Map markers: red center pin = location to mock, blue dot = current mocked location, gray dot = captured real location, T = radius target, A/B = route start and end with orange waypoint dots. The native route uses WGS84 ellipsoidal geometry; Turf radius/distance uses a spherical geodesic approximation, so small differences can occur. Radius is an in-app comparison, not Android GeofencingClient registration. It does not infer another app's geofence result.
 
-Settings apply to the next simulation, not an already running one. Interval is 200-10000 ms; duration is 0-86400 seconds. Zero duration uses a 24-hour safety cap. Routes require positive speed and 2-500 points. Speeds in Settings/routes are km/h; the location editor/native location API uses m/s. Bearing follows the route tangent during route playback. The service uses monotonic time and bounded scheduled updates; OEM battery restrictions may still stop it. There is no boot auto-start or hidden restart.
+Settings apply to the next simulation, not an already running one; the route speed presets and Loop chip on the map change these settings. Interval is 200-10000 ms; duration is 0-86400 seconds. Zero duration uses a 24-hour safety cap. Routes require positive speed and 2-500 points. Speeds in Settings/routes are km/h; the location editor/native location API uses m/s. Bearing follows the route tangent during route playback and the joystick direction in joystick mode. Joystick positions advance at the configured update interval (use 200-500 ms for smoother movement). The service uses monotonic time and bounded scheduled updates; OEM battery restrictions may still stop it. There is no boot auto-start or hidden restart.
 
-Coordinate entry, persisted presets, routes and simulation work without network. Fresh map tiles need connectivity. MapLibre 11.2.0 uses OpenFreeMap over HTTPS with attribution; no map key is required. `npm ci` applies the committed one-line React Native 0.87 compatibility patch via `patch-package`. Review tile-provider terms and availability for deployment.
+Coordinate entry (including typed coordinates in the search bar), persisted favorites, history, routes and simulation work without network. Fresh map tiles and place search need connectivity. Third-party services, all over HTTPS without keys:
+
+- **Map styles:** Streets, Bright, Light and Dark use [OpenFreeMap](https://openfreemap.org) (OpenStreetMap data) with attribution. Satellite uses [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) with the required Esri attribution; review [Esri's terms of use](https://goto.arcgisonline.com/maps/World_Imagery) before any distribution or commercial use.
+- **Place search:** [OpenStreetMap Nominatim](https://nominatim.org). Its [usage policy](https://operations.osmfoundation.org/policies/nominatim/) allows at most 1 request per second, requires an identifying User-Agent, and forbids search-as-you-type. The app searches only when you submit, waits between requests, and identifies itself. For heavy or production use, host your own Nominatim or use a commercial geocoder.
+
+MapLibre 11.2.0 renders the map. `npm ci` applies the committed one-line React Native 0.87 compatibility patch via `patch-package`. Review tile-provider terms and availability for deployment.
 
 ## Environment configuration
 
@@ -272,9 +288,9 @@ The SDK directory and required tools are now installed. The command above comple
 
 Core path: `React Native UI -> typed Kotlin module -> MockLocationService -> LocationManager test providers`. The native bridge uses RN's legacy-module interop in the new-architecture template. The native service is the authority for simulation status. Only selections/settings/presets persist in JS, never an assumption that simulation is still running.
 
-- `mobile/src/screens`, `components`, `navigation`: presentation and typed navigation.
-- `mobile/src/services`, `store`, `utils`, `types`: permissions/bridge, local and cloud state, validation, geometry, models.
-- `mobile/android/app/src/main/java/com/mockgpstester/mocklocation`: bridge, foreground service, status, WGS84 engine.
+- `mobile/src/screens`, `components`, `navigation`: presentation and typed navigation. `EmulatorScreen.tsx` is the map-first home screen; `components/` holds the center pin, joystick, round controls, side drawer, bottom sheet and name prompt (icons are drawn with views, so no icon font or extra native dependency is needed).
+- `mobile/src/services`, `store`, `utils`, `types`: permissions/bridge, place search (`geocoding.ts`), local and cloud state, preferences (map style, joystick speed), validation, geometry, joystick math, map styles, models.
+- `mobile/android/app/src/main/java/com/mockgpstester/mocklocation`: bridge, foreground service, status, WGS84 engine. Joystick input (`steer`) and teleport (`moveTo`) reach the running service as intents; the engine integrates steering geodesically and stops it after 3 s without updates.
 - `backend/app`: configuration, models, schemas, repository, API, and application factory.
 - `backend/migrations`: explicit schema history; no automatic production table creation.
 
@@ -331,7 +347,8 @@ The compiled `MockLocationServiceTest` is opt-in: manually select this app as th
 
 ## Device and release checklist
 
-- Verify map tap/drag, offline manual entry, overlays, rotation, font scaling and both themes on small/large devices.
+- Verify map tap/long-press, center pin accuracy, place search and typed coordinates, map style switching (including satellite), offline manual entry, overlays, rotation, font scaling and both themes on small/large devices.
+- Verify joystick steering direction on rotated maps, release/backgrounding stops movement, Move mock here, camera follow, route drawing/undo/loop, and favorites/history.
 - Verify permission denied/approximate-only, services off, wrong mock app, notification denied, and recovery after permission revocation.
 - Observe mock readings in your authorized test app, status events, pause freezing route time, foreground notification actions, and restoration of non-mock readings after stop/completion.
 - Verify background/screen-off behavior, unexpected process death, reopening/recovery, and OEM battery restrictions. Last readings can remain cached by clients; clients must check timestamps/mock flags.

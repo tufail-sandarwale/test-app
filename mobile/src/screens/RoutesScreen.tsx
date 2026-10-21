@@ -45,7 +45,7 @@ export function RoutesScreen({
       ))}
       <ActionButton
         label="Add Waypoints on Map"
-        onPress={() => navigation.navigate('Map')}
+        onPress={() => navigation.popTo('Home', { mode: 'route' })}
       />
       <ActionButton
         label="Save Route"
@@ -65,7 +65,7 @@ export function RoutesScreen({
         label="Start Route"
         disabled={route.length < 2}
         onPress={() => {
-          navigation.navigate('Home');
+          navigation.popTo('Home', { mode: 'route' });
           simulationActions.startRoute();
         }}
       />
@@ -105,7 +105,7 @@ export function RoutesScreen({
             label={`Start ${saved.name}`}
             onPress={() => {
               selectRoute(saved.id);
-              navigation.navigate('Home');
+              navigation.popTo('Home', { mode: 'route' });
               simulationActions.startRoute();
             }}
           />

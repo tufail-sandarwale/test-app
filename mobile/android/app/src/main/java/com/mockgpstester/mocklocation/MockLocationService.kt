@@ -103,6 +103,22 @@ class MockLocationService : Service() {
                     handler.post(tick)
                 }
                 STOP -> finish("stopped")
+                STEER, MOVE -> {
+                    val engine = simulator ?: return START_NOT_STICKY
+                    if (engine.isRoute || engine.state !in listOf("running", "paused")) return START_NOT_STICKY
+                    val running = engine.state == "running"
+                    val now = SystemClock.elapsedRealtime()
+                    // Consume time travelled under the previous input before applying the new one.
+                    engine.advance(if (running) (now - previousTick) / 1000.0 else 0.0)
+                    if (running) previousTick = now
+                    if (engine.state == "completed") { finish("completed"); return START_NOT_STICKY }
+                    if (intent.action == STEER) engine.steer(intent.getDoubleExtra("bearing", 0.0), intent.getDoubleExtra("speed", 0.0))
+                    else {
+                        engine.moveTo(Coordinate(intent.getDoubleExtra("latitude", Double.NaN), intent.getDoubleExtra("longitude", Double.NaN)))
+                        if (running) { handler.removeCallbacks(tick); handler.post(tick) }
+                        else SimulationState.publish(this, "paused", engine.advance(0.0), engine.config)
+                    }
+                }
                 else -> finish("stopped")
             }
         } catch (error: Exception) { fail(error) }
@@ -125,7 +141,7 @@ class MockLocationService : Service() {
                 accuracy = config.accuracy.toFloat()
                 altitude = config.altitude
                 bearing = frame.bearing.toFloat()
-                speed = config.speed.toFloat()
+                speed = frame.speed.toFloat()
                 time = System.currentTimeMillis()
                 elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
                 if (Build.VERSION.SDK_INT >= 26) {
@@ -208,6 +224,8 @@ class MockLocationService : Service() {
         const val PAUSE = "com.mockgpstester.PAUSE"
         const val RESUME = "com.mockgpstester.RESUME"
         const val STOP = "com.mockgpstester.STOP"
+        const val STEER = "com.mockgpstester.STEER"
+        const val MOVE = "com.mockgpstester.MOVE"
         const val CHANNEL = "mock-location"
         const val MOCK_MESSAGE = "Mock location is not enabled for this application. Select this application as the mock location app in Android Developer Options."
 

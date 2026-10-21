@@ -37,3 +37,10 @@ export interface RoutePreset {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface RecentLocation extends Coordinate {
+  name?: string;
+  usedAt: string;
+}
+
+export type EmulatorMode = 'point' | 'route' | 'joystick';

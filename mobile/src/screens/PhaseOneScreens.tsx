@@ -19,11 +19,9 @@ import { applyLocationDraft, locationDraft } from '../services/locationEditor';
 import { numberValue } from '../utils/validation';
 import type { SimulationSettings } from '../types/location';
 
-type HomeProps = NativeStackScreenProps<RootStackParamList, 'Home'>;
+type StatusProps = NativeStackScreenProps<RootStackParamList, 'Status'>;
 
-export { MapScreen } from './MapScreen';
-
-export function HomeScreen({ navigation }: HomeProps) {
+export function StatusScreen({ navigation }: StatusProps) {
   const { status, realLocation, error, busy } = useSimulationStore();
   const { selected, target, settings } = useLocationStore();
   const setup = useSetupStore(state => state.prerequisites);
@@ -140,8 +138,8 @@ export function HomeScreen({ navigation }: HomeProps) {
         value={`${(status.remainingMeters ?? 0).toFixed(1)} m`}
       />
       <ActionButton
-        label="Select Location"
-        onPress={() => navigation.navigate('Map')}
+        label="Pick on Map"
+        onPress={() => navigation.popTo('Home', { mode: 'point' })}
       />
       <ActionButton
         label="Start Simulation"
@@ -203,7 +201,7 @@ export function LocationDetailsScreen({
     try {
       applyLocationDraft(draft, save, id);
       setError(null);
-      navigation.navigate('Home');
+      navigation.popTo('Home', { mode: 'point' });
       if (start) {
         simulationActions.start();
       }
@@ -244,10 +242,12 @@ export function LocationDetailsScreen({
 export function SavedLocationsScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, 'SavedLocations'>) {
-  const { presets, deletePreset, selectPreset } = useLocationStore();
+  const { presets, recent, deletePreset, selectPreset, select, clearRecent } =
+    useLocationStore();
+  const showOnMap = () => navigation.popTo('Home', { mode: 'point' });
   return (
     <Screen>
-      <SectionTitle>Saved Locations</SectionTitle>
+      <SectionTitle>Favorites</SectionTitle>
       <Reading label="Locations" value={String(presets.length)} />
       {presets.map(preset => (
         <View key={preset.id}>
@@ -262,14 +262,14 @@ export function SavedLocationsScreen({
             label={`Select ${preset.name}`}
             onPress={() => {
               selectPreset(preset.id);
-              navigation.navigate('Home');
+              showOnMap();
             }}
           />
           <ActionButton
             label={`Start ${preset.name}`}
             onPress={() => {
               selectPreset(preset.id);
-              navigation.navigate('Home');
+              showOnMap();
               simulationActions.start();
             }}
           />
@@ -298,6 +298,41 @@ export function SavedLocationsScreen({
         label="Create Location"
         onPress={() => navigation.navigate('LocationDetails')}
       />
+      <SectionTitle>Recent</SectionTitle>
+      {!recent.length && (
+        <Reading label="History" value="Locations you mock appear here" />
+      )}
+      {recent.map((item, index) => {
+        const coordinates = `${item.latitude.toFixed(
+          6,
+        )}, ${item.longitude.toFixed(6)}`;
+        return (
+          <View key={`${item.usedAt}-${index}`}>
+            <Reading
+              label={item.name ?? coordinates}
+              value={new Date(item.usedAt).toLocaleString()}
+            />
+            <ActionButton
+              label={`Show recent ${index + 1} on map`}
+              onPress={() => {
+                select({ latitude: item.latitude, longitude: item.longitude });
+                showOnMap();
+              }}
+            />
+          </View>
+        );
+      })}
+      {recent.length > 0 && (
+        <ActionButton
+          label="Clear History"
+          onPress={() =>
+            Alert.alert('Clear location history?', undefined, [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Clear', style: 'destructive', onPress: clearRecent },
+            ])
+          }
+        />
+      )}
     </Screen>
   );
 }

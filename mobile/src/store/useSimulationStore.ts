@@ -10,6 +10,7 @@ import type {
 } from '../services/MockLocation';
 import { useLocationStore } from './useLocationStore';
 import { validateRoute } from '../utils/validation';
+import type { Coordinate } from '../types/location';
 
 interface State {
   status: SimulationStatus;
@@ -93,7 +94,45 @@ export const simulationActions = {
         ...settings,
         speed: settings.speedKmh / 3.6,
       });
+      useLocationStore.getState().addRecent(selected);
     }),
+  /** Selects a coordinate and mocks it. Joystick mode starts stationary; steering sets the speed. */
+  startAt: (
+    coordinate: Coordinate,
+    options: { joystick?: boolean; name?: string } = {},
+  ) =>
+    useSimulationStore.getState().run(async () => {
+      const store = useLocationStore.getState();
+      store.select(coordinate);
+      const { settings } = store;
+      await MockLocation.start({
+        ...coordinate,
+        accuracy: settings.accuracy,
+        altitude: settings.altitude,
+        bearing: settings.bearing,
+        updateIntervalMs: settings.updateIntervalMs,
+        durationSeconds: settings.durationSeconds,
+        speed: options.joystick ? 0 : settings.speedKmh / 3.6,
+      });
+      store.addRecent(coordinate, options.name);
+    }),
+  moveHere: (coordinate: Coordinate, name?: string) =>
+    useSimulationStore.getState().run(async () => {
+      const store = useLocationStore.getState();
+      store.select(coordinate);
+      await MockLocation.moveTo(coordinate);
+      store.addRecent(coordinate, name);
+    }),
+  /** Fire-and-forget joystick input; bypasses the busy lock so frequent updates are not dropped. */
+  steer: async (bearing: number, speedMetersPerSecond: number) => {
+    try {
+      await MockLocation.steer(bearing, speedMetersPerSecond);
+    } catch (error) {
+      useSimulationStore.setState({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
   startRoute: () =>
     useSimulationStore.getState().run(async () => {
       const { route, settings } = useLocationStore.getState();

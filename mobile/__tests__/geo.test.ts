@@ -4,7 +4,7 @@ import {
   interpolateRoute,
   validateCoordinate,
 } from '../src/utils/geo';
-import { useLocationStore } from '../src/store/useLocationStore';
+import { MAX_RECENT, useLocationStore } from '../src/store/useLocationStore';
 import { validateRoute } from '../src/utils/validation';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePersistenceStatus } from '../src/services/localStorage';
@@ -119,4 +119,66 @@ test('corrupt persisted coordinates are rejected without replacing good state', 
     'could not be loaded',
   );
   expect(usePersistenceStatus.getState().ready).toBe(true);
+});
+
+test('recent history deduplicates nearby points, names favorites and is capped', () => {
+  const store = useLocationStore.getState();
+  store.clearRecent();
+  store.savePreset('Office', {
+    latitude: 10,
+    longitude: 10,
+    accuracy: 5,
+    altitude: 0,
+    bearing: 0,
+    speed: 1,
+  });
+  store.addRecent({ latitude: 10, longitude: 10.00001 });
+  expect(useLocationStore.getState().recent[0].name).toBe('Office');
+  store.addRecent({ latitude: 10, longitude: 10 }, '  Desk  ');
+  expect(useLocationStore.getState().recent).toHaveLength(1);
+  expect(useLocationStore.getState().recent[0].name).toBe('Desk');
+  for (let index = 0; index < MAX_RECENT + 5; index++) {
+    store.addRecent({ latitude: index, longitude: 50 });
+  }
+  expect(useLocationStore.getState().recent).toHaveLength(MAX_RECENT);
+  expect(useLocationStore.getState().recent[0].latitude).toBe(MAX_RECENT + 4);
+  store.clearRecent();
+  expect(useLocationStore.getState().recent).toHaveLength(0);
+});
+
+test('data saved before history existed still loads', async () => {
+  usePersistenceStatus.setState({ error: null });
+  const state: Record<string, unknown> = { ...useLocationStore.getState() };
+  delete state.recent;
+  await AsyncStorage.setItem(
+    'mock-gps-local-v1',
+    JSON.stringify({
+      version: 1,
+      state: { ...state, selected: { latitude: 1, longitude: 2 } },
+    }),
+  );
+  await useLocationStore.persist.rehydrate();
+  expect(useLocationStore.getState().selected).toEqual({
+    latitude: 1,
+    longitude: 2,
+  });
+  expect(useLocationStore.getState().recent).toEqual([]);
+  expect(usePersistenceStatus.getState().error).toBeNull();
+});
+
+test('corrupt history is rejected', async () => {
+  await AsyncStorage.setItem(
+    'mock-gps-local-v1',
+    JSON.stringify({
+      version: 1,
+      state: {
+        ...useLocationStore.getState(),
+        recent: [{ latitude: 0, longitude: 0, usedAt: 'not a date' }],
+      },
+    }),
+  );
+  await useLocationStore.persist.rehydrate();
+  expect(usePersistenceStatus.getState().error).toContain(
+    'could not be loaded',
+  );
 });
