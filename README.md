@@ -185,6 +185,8 @@ Open **Mock GPS Tester** on the device. Approve USB debugging on the phone if pr
 
 ### Standalone test APK (no Expo or Metro)
 
+**Download for phone testing:** [releases/mock-gps-tester-test-arm64.apk](https://github.com/tufail-sandarwale/test-app/raw/main/releases/mock-gps-tester-test-arm64.apk) (about 37 MB, 64-bit ARM phones, Android 7.0+). Open the link on the phone, allow installation from your browser or file manager if prompted, then open **Mock GPS Tester**. It is development-signed for testing only; uninstall it before installing a build signed with a different key.
+
 Build `:app:assembleStandalone` using the same Gradle command and approved-mirror flags documented below. This variant bundles JavaScript, Hermes and assets, uses release dependencies with developer support disabled, and is signed with the development key. Production release signing is unchanged. This is for private testing only, not store distribution.
 
 Verified on 2026-09-19: standalone build passes, APK v2 signature verifies, bundled JavaScript and Hermes are present for arm64-v8a, armeabi-v7a, x86 and x86_64. Version `1.0-test`, minimum SDK 24, size approximately 114 MB. The custom variant explicitly disables cleartext traffic.
